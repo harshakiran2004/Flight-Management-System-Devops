@@ -1,0 +1,10 @@
+const express = require('express');
+const controller = require('../controllers/adminController');
+const { requireAuth, requireAdmin } = require('../middleware/authMiddleware');
+const userController = require('../controllers/userController');
+const router = express.Router();
+router.use(requireAuth, requireAdmin);
+router.get('/dashboard', controller.dashboard);
+router.get('/bookings', controller.bookings);
+router.get('/users', userController.listUsers);
+module.exports = router;

@@ -1,0 +1,12 @@
+const express = require('express');
+const { body } = require('express-validator');
+const controller = require('../controllers/flightController');
+const { requireAuth, requireAdmin } = require('../middleware/authMiddleware');
+const router = express.Router();
+router.get('/search', controller.search);
+router.get('/', controller.list);
+router.get('/:id', controller.details);
+router.post('/', requireAuth, requireAdmin, [body('airline').notEmpty().withMessage('Airline is required'), body('price').isNumeric().withMessage('Price must be numeric')], controller.create);
+router.put('/:id', requireAuth, requireAdmin, controller.update);
+router.delete('/:id', requireAuth, requireAdmin, controller.remove);
+module.exports = router;
