@@ -1,3 +1,4 @@
+const https = require('https');
 const OPEN_METEO_GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
 const OPEN_SKY_STATES_URL = 'https://opensky-network.org/api/states/all';
@@ -15,26 +16,69 @@ let openSkyToken;
 let openSkyTokenExpiresAt = 0;
 
 async function fetchJson(url, service, options = {}) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
-  try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    if (!response.ok) {
-      const status = response.status === 429 ? 503 : 502;
-      const message = response.status === 429 ? `${service} is temporarily rate limited. Try again later.` : `${service} is temporarily unavailable.`;
-      const error = new Error(message);
-      error.status = status;
-      throw error;
+  const requestUrl = url instanceof URL ? url : new URL(url);
+
+  return new Promise((resolve, reject) => {
+    const req = https.request(
+      requestUrl,
+      {
+        method: options.method || 'GET',
+        headers: options.headers || {},
+        family: 4,
+        timeout: 10000
+      },
+      (res) => {
+        let body = '';
+
+        res.setEncoding('utf8');
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+
+        res.on('end', () => {
+          if (res.statusCode < 200 || res.statusCode >= 300) {
+            const error = new Error(
+              res.statusCode === 429
+                ? `${service} is temporarily rate limited. Try again later.`
+                : `${service} is temporarily unavailable.`
+            );
+            error.status = res.statusCode === 429 ? 503 : 502;
+            return reject(error);
+          }
+
+          try {
+            resolve(JSON.parse(body));
+          } catch {
+            const error = new Error(
+              `${service} returned an invalid response.`
+            );
+            error.status = 502;
+            reject(error);
+          }
+        });
+      }
+    );
+
+    req.on('timeout', () => {
+      req.destroy(new Error('Request timed out'));
+    });
+
+    req.on('error', (error) => {
+      const wrapped = new Error(
+        error.message === 'Request timed out'
+          ? `${service} request timed out.`
+          : `${service} could not be reached.`
+      );
+      wrapped.status = 502;
+      reject(wrapped);
+    });
+
+    if (options.body) {
+      req.write(options.body.toString());
     }
-    return await response.json();
-  } catch (error) {
-    if (error.status) throw error;
-    const wrapped = new Error(error.name === 'AbortError' ? `${service} request timed out.` : `${service} could not be reached.`);
-    wrapped.status = 502;
-    throw wrapped;
-  } finally {
-    clearTimeout(timeout);
-  }
+
+    req.end();
+  });
 }
 
 async function getOpenSkyHeaders() {
